@@ -478,7 +478,7 @@
       if (d.text) {
         out.textContent = d.text;
       } else if (d.error === 'no_api_key') {
-        out.textContent = '⚠️ AI 功能需要配置 API Key。请在 Vercel 环境变量中设置 CLAUDE_API_KEY。';
+        out.textContent = '⚠️ AI 功能需要配置 API Key。请在 Vercel 环境变量中设置 ZHIPU_API_KEY。';
       } else {
         out.textContent = '生成失败：' + (d.error || '未知错误');
       }

@@ -59,8 +59,8 @@ def fetch_history(period="1mo"):
         return {"error": str(e)}
 
 def ai_analyze(payload):
-    """Call Claude via Nous API"""
-    api_key = os.environ.get("CLAUDE_API_KEY", "")
+    """Call Zhipu GLM-4-Flash API"""
+    api_key = os.environ.get("ZHIPU_API_KEY", "")
     if not api_key:
         return {"error": "no_api_key"}
 
@@ -91,29 +91,28 @@ def ai_analyze(payload):
 3. 行权建议"""
 
     body = json.dumps({
-        "model": "claude-haiku-4-5",
-        "max_tokens": 600,
-        "messages": [{"role": "user", "content": prompt}]
+        "model": "glm-4-flash",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 600
     }).encode()
 
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
         data=body,
         headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
             "User-Agent": "quhe-options/1.0"
         }
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             resp = json.loads(r.read())
-        text = resp["content"][0]["text"]
+        text = resp["choices"][0]["message"]["content"]
         return {"text": text}
     except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        return {"error": f"HTTP {e.code}: {body}"}
+        err = e.read().decode()
+        return {"error": f"HTTP {e.code}: {err}"}
     except Exception as e:
         return {"error": str(e)}
 
