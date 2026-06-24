@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>群核期权助手</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f6fa; --bg2: #eef0f7; --card: #ffffff;
+      --border: #e2e5f0; --accent: #4f46e5; --accent-light: #ede9fe;
+      --accent2: #059669; --accent2-light: #d1fae5;
+      --danger: #dc2626; --danger-light: #fee2e2;
+      --warn: #d97706; --warn-light: #fef3c7;
+      --text: #1e2030; --text2: #6b7280; --text3: #9ca3af;
+      --green: #059669; --red: #dc2626;
+      --shadow: 0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.05);
+    }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,'PingFang SC','Helvetica Neue',sans-serif; min-height:100vh; padding:28px 16px 48px; }
+    .container { max-width:800px; margin:0 auto; }
+
+    /* Header */
+    .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+    .header h1 { font-size:22px; font-weight:700; }
+    .header p { font-size:13px; color:var(--text2); margin-top:3px; }
+    .badge { background:var(--accent-light); color:var(--accent); padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; border:1px solid #c4b5fd; }
+
+    /* Card */
+    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:22px; margin-bottom:16px; box-shadow:var(--shadow); }
+    .card-title { font-size:12px; font-weight:700; color:var(--text2); text-transform:uppercase; letter-spacing:.07em; margin-bottom:16px; }
+
+    /* Stock */
+    .stock-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; }
+    .stock-name { font-size:15px; font-weight:700; }
+    .stock-code { font-size:12px; color:var(--text2); margin-top:2px; }
+    .stock-price { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; text-align:right; }
+    .stock-change { font-size:13px; font-weight:600; margin-top:3px; text-align:right; }
+    .stock-change.up { color:var(--green); }
+    .stock-change.down { color:var(--red); }
+    .chart-wrap { position:relative; height:180px; margin-bottom:10px; }
+    .chart-period { display:flex; gap:6px; justify-content:flex-end; }
+    .btn-period { background:none; border:1px solid var(--border); border-radius:6px; color:var(--text2); font-size:12px; padding:4px 10px; cursor:pointer; font-weight:500; transition:all .15s; }
+    .btn-period.active, .btn-period:hover { background:var(--accent-light); border-color:var(--accent); color:var(--accent); }
+
+    /* Input */
+    .input-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .input-group { display:flex; flex-direction:column; gap:7px; }
+    .input-group label { font-size:12px; color:var(--text2); font-weight:600; }
+    .input-row { display:flex; gap:8px; align-items:center; }
+    .input-row input { flex:1; background:var(--bg); border:1.5px solid var(--border); border-radius:10px; padding:10px 12px; color:var(--text); font-size:16px; font-weight:700; outline:none; transition:border .2s; }
+    .input-row input:focus { border-color:var(--accent); background:#fff; }
+    .input-row .unit { font-size:13px; color:var(--text2); font-weight:500; min-width:34px; }
+    .btn-refresh { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:10px 14px; font-size:13px; cursor:pointer; font-weight:600; white-space:nowrap; transition:opacity .15s; }
+    .btn-refresh:hover { opacity:.85; }
+    .btn-refresh:disabled { opacity:.5; cursor:default; }
+
+    /* Shares */
+    .shares-labels { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:12px; }
+    .shares-big { font-size:26px; font-weight:700; }
+    .shares-sub { font-size:13px; color:var(--text2); margin-top:3px; }
+    input[type="range"] { -webkit-appearance:none; width:100%; height:6px; border-radius:3px; background:linear-gradient(to right,var(--accent) 0%,var(--accent) 66.67%,var(--bg2) 66.67%); outline:none; cursor:pointer; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px var(--accent-light); cursor:pointer; border:2px solid #fff; }
+    .shares-quick { display:flex; gap:8px; margin-top:12px; }
+    .btn-quick { flex:1; background:var(--bg); border:1.5px solid var(--border); border-radius:8px; color:var(--text2); font-size:12px; padding:7px 0; cursor:pointer; font-weight:600; transition:all .15s; }
+    .btn-quick.active, .btn-quick:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-light); }
+
+    /* Results */
+    .result-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:14px; }
+    .result-item { background:var(--bg); border-radius:12px; padding:14px; border:1px solid var(--border); }
+    .r-label { font-size:11px; color:var(--text2); margin-bottom:6px; font-weight:600; }
+    .r-value { font-size:19px; font-weight:700; }
+    .r-value.red { color:var(--red); }
+    .r-value.accent { color:var(--accent); }
+    .r-sub { font-size:11px; color:var(--text2); margin-top:4px; }
+
+    /* Insight */
+    .insight-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .insight-card { border-radius:12px; padding:16px; border:1.5px solid var(--border); }
+    .insight-card.green { background:var(--accent2-light); border-color:#6ee7b7; }
+    .insight-card.purple { background:var(--accent-light); border-color:#c4b5fd; }
+    .i-label { font-size:11px; font-weight:700; color:var(--text2); margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em; }
+    .i-value { font-size:26px; font-weight:700; line-height:1.1; }
+    .insight-card.green .i-value { color:var(--accent2); }
+    .insight-card.purple .i-value { color:var(--accent); }
+    .i-sub { font-size:12px; color:var(--text2); margin-top:6px; line-height:1.5; }
+    .i-tag { display:inline-block; margin-top:8px; font-size:12px; font-weight:700; padding:3px 10px; border-radius:20px; color:#fff; }
+    .insight-card.green .i-tag { background:#059669; }
+    .insight-card.purple .i-tag { background:var(--accent); }
+
+    /* AI */
+    .ai-panel { border-color:#c4b5fd; }
+    .ai-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .ai-badge { font-size:11px; color:var(--accent); background:var(--accent-light); border:1px solid #c4b5fd; padding:3px 10px; border-radius:20px; font-weight:600; }
+    .btn-generate { background:var(--accent); color:#fff; border:none; border-radius:10px; padding:11px 20px; font-size:14px; font-weight:600; cursor:pointer; width:100%; margin-bottom:14px; transition:opacity .15s; }
+    .btn-generate:hover { opacity:.88; }
+    .btn-generate:disabled { opacity:.5; cursor:default; }
+    .ai-output { background:var(--bg); border-radius:10px; border:1px solid var(--border); padding:16px; font-size:14px; line-height:1.85; color:var(--text); min-height:90px; white-space:pre-wrap; }
+    .ai-output.placeholder { color:var(--text3); font-style:italic; }
+
+    /* Chat */
+    .chat-history { display:flex; flex-direction:column; gap:12px; margin-bottom:14px; max-height:320px; overflow-y:auto; padding-right:4px; }
+    .chat-bubble { max-width:86%; padding:11px 14px; border-radius:14px; font-size:14px; line-height:1.65; }
+    .chat-bubble.user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+    .chat-bubble.ai { align-self:flex-start; background:var(--bg); border:1px solid var(--border); color:var(--text); border-bottom-left-radius:4px; }
+    .bubble-label { font-size:11px; opacity:.7; margin-bottom:4px; font-weight:700; }
+    .chat-input-row { display:flex; gap:10px; }
+    .chat-input-row input { flex:1; background:var(--bg); border:1.5px solid var(--border); border-radius:10px; padding:12px 14px; color:var(--text); font-size:14px; outline:none; transition:border .2s; }
+    .chat-input-row input:focus { border-color:var(--accent); background:#fff; }
+    .chat-input-row input::placeholder { color:var(--text3); }
+    .btn-send { background:var(--accent); color:#fff; border:none; border-radius:10px; padding:12px 20px; font-size:14px; font-weight:600; cursor:pointer; transition:opacity .15s; }
+    .btn-send:hover { opacity:.85; }
+    .btn-send:disabled { opacity:.4; cursor:default; }
+    .suggested { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+    .btn-suggest { background:var(--bg); border:1.5px solid var(--border); border-radius:20px; color:var(--text2); font-size:12px; padding:6px 12px; cursor:pointer; font-weight:500; transition:all .15s; }
+    .btn-suggest:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-light); }
+
+    .proto-note { text-align:center; font-size:12px; color:var(--text3); margin-top:24px; padding-top:16px; border-top:1px solid var(--border); }
+    .loading-dot::after { content:''; animation:dots 1.2s infinite; }
+    @keyframes dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
+
+    @media(max-width:560px) {
+      .input-grid { grid-template-columns:1fr; }
+      .result-grid { grid-template-columns:1fr 1fr; }
+      .stock-price { font-size:22px; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div>
+      <h1>群核期权助手 📈</h1>
+      <p>00068.HK · 行权决策支持</p>
+    </div>
+    <div class="badge">AI 驱动</div>
+  </div>
+
+  <!-- 股票图 -->
+  <div class="card">
+    <div class="stock-header">
+      <div>
+        <div class="stock-name">群核科技</div>
+        <div class="stock-code">00068.HK · 港交所</div>
+      </div>
+      <div>
+        <div class="stock-price" id="display-price">--</div>
+        <div class="stock-change" id="display-change">加载中…</div>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="stockChart"></canvas></div>
+    <div class="chart-period">
+      <button class="btn-period active" onclick="switchPeriod('1M',this)">1月</button>
+      <button class="btn-period" onclick="switchPeriod('3M',this)">3月</button>
+      <button class="btn-period" onclick="switchPeriod('6M',this)">6月</button>
+      <button class="btn-period" onclick="switchPeriod('1Y',this)">1年</button>
+    </div>
+  </div>
+
+  <!-- 市场数据 -->
+  <div class="card">
+    <div class="card-title">📥 市场数据</div>
+    <div class="input-grid">
+      <div class="input-group">
+        <label>当前股价（HKD）</label>
+        <div class="input-row">
+          <input type="number" id="price" value="" placeholder="加载中…" step="0.01" min="0" />
+          <span class="unit">HKD</span>
+          <button class="btn-refresh" id="btn-price" onclick="loadPrice()">刷新</button>
+        </div>
+      </div>
+      <div class="input-group">
+        <label>HKD / CNY 汇率</label>
+        <div class="input-row">
+          <input type="number" id="rate" value="" placeholder="加载中…" step="0.0001" min="0" />
+          <span class="unit">CNY</span>
+          <button class="btn-refresh" id="btn-rate" onclick="loadRate()">刷新</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 行权数量 -->
+  <div class="card">
+    <div class="card-title">📐 行权数量</div>
+    <div class="shares-labels">
+      <div>
+        <div class="shares-big"><span id="shares-display">100,000</span> 股</div>
+        <div class="shares-sub">占总期权 <span id="shares-pct">66.7%</span> · 保留 <span id="shares-keep">50,000</span> 股</div>
+      </div>
+    </div>
+    <input type="range" id="shares-slider" min="0" max="150000" step="5000" value="100000" oninput="onSlider(this.value)" />
+    <div class="shares-quick">
+      <button class="btn-quick" onclick="setShares(50000,this)">1/3 · 5万</button>
+      <button class="btn-quick active" onclick="setShares(100000,this)">2/3 · 10万</button>
+      <button class="btn-quick" onclick="setShares(150000,this)">全部 · 15万</button>
+    </div>
+  </div>
+
+  <!-- 收益估算 -->
+  <div class="card">
+    <div class="card-title">💰 行权收益估算</div>
+    <div class="result-grid">
+      <div class="result-item">
+        <div class="r-label">行权所得（税前）</div>
+        <div class="r-value" id="gross">¥--</div>
+        <div class="r-sub">含汇兑折算</div>
+      </div>
+      <div class="result-item">
+        <div class="r-label">预计个税</div>
+        <div class="r-value red" id="tax">¥--</div>
+        <div class="r-sub">工薪所得·分月计税</div>
+      </div>
+      <div class="result-item">
+        <div class="r-label">税后实际到手</div>
+        <div class="r-value accent" id="net">¥--</div>
+        <div class="r-sub">约 <span id="net-wan">--</span> 万元</div>
+      </div>
+    </div>
+    <div class="insight-grid">
+      <div class="insight-card green">
+        <div class="i-label">💰 距百万现金</div>
+        <div class="i-value" id="million-value">¥--</div>
+        <div class="i-sub" id="million-sub">税后到手是否超过 ¥100万</div>
+        <div class="i-tag" id="million-tag" style="background:#9ca3af">计算中</div>
+      </div>
+      <div class="insight-card purple">
+        <div class="i-label">📅 相当于 N 年盈余</div>
+        <div class="i-value" id="years-value">-- 年</div>
+        <div class="i-sub">月盈余 ¥2.3万<br>这笔钱等于攒多少年</div>
+        <div class="i-tag" id="years-tag" style="background:#9ca3af">计算中</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 分析 -->
+  <div class="card ai-panel">
+    <div class="ai-header">
+      <div class="card-title" style="margin-bottom:0">🧠 AI 决策分析</div>
+      <div class="ai-badge">Claude · 实时生成</div>
+    </div>
+    <button class="btn-generate" id="btn-analyze" onclick="doAnalyze()">✨ 基于当前数据生成 AI 分析</button>
+    <div class="ai-output placeholder" id="ai-output">点击上方按钮，AI 将根据当前股价、汇率、行权数量，生成个性化的决策分析建议。</div>
+  </div>
+
+  <!-- 对话 -->
+  <div class="card">
+    <div class="card-title">💬 问 AI 任何问题</div>
+    <div class="suggested">
+      <button class="btn-suggest" onclick="fillQ('如果股价跌到15块，我税后还能拿多少？')">股价跌到 15 HKD？</button>
+      <button class="btn-suggest" onclick="fillQ('VC解禁日一般会下跌多少？')">VC 解禁日影响？</button>
+      <button class="btn-suggest" onclick="fillQ('2/3方案和全部行权哪个划算？')">2/3 vs 全部？</button>
+      <button class="btn-suggest" onclick="fillQ('什么时候是最佳行权时机？')">最佳行权时机？</button>
+    </div>
+    <div class="chat-history" id="chat-history">
+      <div class="chat-bubble ai">
+        <div class="bubble-label">AI 助手</div>
+        你好！我是你的群核期权顾问，可以问我关于行权策略、税务规划、最佳时机的任何问题 📊
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="输入你的问题，按回车发送…" onkeydown="if(event.key==='Enter')sendChat()" />
+      <button class="btn-send" id="btn-send" onclick="sendChat()">发送</button>
+    </div>
+  </div>
+
+  <div class="proto-note">群核期权助手 v1.0 · 数据来源 Yahoo Finance · AI 由 Claude 驱动</div>
+</div>
+
+<script>
+  // ─── 常量 ───
+  const EXERCISE_PRICE_CNY = 0.025;
+  const TOTAL_SHARES = 150000;
+  const MONTHLY_SURPLUS = 23000;
+  const MILLION = 1000000;
+
+  // ─── API 基础路径（Vercel 部署后为空，本地调试时可改为 http://localhost:3000）───
+  const API_BASE = '';
+
+  // ─── 个税（分月摊计法，最多12个月）───
+  function calcTax(income) {
+    const m = income / 12;
+    let rate, deduct;
+    if (m <= 3000)       { rate=0.03; deduct=0; }
+    else if (m <= 12000) { rate=0.10; deduct=210; }
+    else if (m <= 25000) { rate=0.20; deduct=1410; }
+    else if (m <= 35000) { rate=0.25; deduct=2660; }
+    else if (m <= 55000) { rate=0.30; deduct=4410; }
+    else if (m <= 80000) { rate=0.35; deduct=7160; }
+    else                 { rate=0.45; deduct=15160; }
+    return (m * rate - deduct) * 12;
+  }
+
+  // ─── 主计算 ───
+  function calculate() {
+    const price  = parseFloat(document.getElementById('price').value) || 0;
+    const rate   = parseFloat(document.getElementById('rate').value) || 0;
+    const shares = parseInt(document.getElementById('shares-slider').value) || 0;
+    const priceCNY = price * rate;
+    const gross  = (priceCNY - EXERCISE_PRICE_CNY) * shares;
+    const tax    = gross > 0 ? calcTax(gross) : 0;
+    const net    = Math.max(gross - tax, 0);
+
+    document.getElementById('gross').textContent = gross > 0 ? '¥' + Math.round(gross).toLocaleString() : '¥--';
+    document.getElementById('tax').textContent   = gross > 0 ? '-¥' + Math.round(tax).toLocaleString() : '¥--';
+    document.getElementById('net').textContent   = gross > 0 ? '¥' + Math.round(net).toLocaleString() : '¥--';
+    document.getElementById('net-wan').textContent = gross > 0 ? (net/10000).toFixed(1) + '万' : '--';
+
+    if (gross > 0) {
+      // 指标1
+      document.getElementById('million-value').textContent = '¥' + (net/10000).toFixed(0) + '万';
+      if (net >= MILLION) {
+        document.getElementById('million-sub').textContent = '超出 ¥100万目标 ¥' + Math.round(net-MILLION).toLocaleString();
+        document.getElementById('million-tag').textContent = '✅ 已达成';
+        document.getElementById('million-tag').style.background = '#059669';
+      } else {
+        document.getElementById('million-sub').textContent = '距 ¥100万还差 ¥' + Math.round(MILLION-net).toLocaleString();
+        document.getElementById('million-tag').textContent = '⚠️ 未达成';
+        document.getElementById('million-tag').style.background = '#d97706';
+      }
+      // 指标2
+      const years = net / (MONTHLY_SURPLUS * 12);
+      document.getElementById('years-value').textContent = years.toFixed(1) + ' 年';
+      document.getElementById('years-tag').textContent = '= ' + Math.round(years*12) + ' 个月盈余';
+      document.getElementById('years-tag').style.background = '#4f46e5';
+    }
+    return { price, rate, shares, gross, tax, net };
+  }
+
+  // ─── 滑块 ───
+  function onSlider(val) {
+    val = parseInt(val);
+    document.getElementById('shares-display').textContent = val.toLocaleString();
+    document.getElementById('shares-pct').textContent = (val/TOTAL_SHARES*100).toFixed(1) + '%';
+    document.getElementById('shares-keep').textContent = (TOTAL_SHARES-val).toLocaleString();
+    const pct = val / TOTAL_SHARES * 100;
+    document.getElementById('shares-slider').style.background =
+      `linear-gradient(to right,var(--accent) 0%,var(--accent) ${pct}%,var(--bg2) ${pct}%)`;
+    document.querySelectorAll('.btn-quick').forEach(b => b.classList.remove('active'));
+    calculate();
+  }
+
+  function setShares(n, btn) {
+    document.getElementById('shares-slider').value = n;
+    document.querySelectorAll('.btn-quick').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    onSlider(n);
+  }
+
+  document.getElementById('price').addEventListener('input', calculate);
+  document.getElementById('rate').addEventListener('input', calculate);
+
+  // ─── 加载股价 ───
+  async function loadPrice() {
+    const btn = document.getElementById('btn-price');
+    btn.textContent = '…'; btn.disabled = true;
+    try {
+      const r = await fetch(API_BASE + '/api/price');
+      const d = await r.json();
+      if (d.price) {
+        document.getElementById('price').value = d.price;
+        document.getElementById('display-price').textContent = d.price.toFixed(2);
+        const ch = d.change || 0, pct = d.change_pct || 0;
+        const el = document.getElementById('display-change');
+        el.textContent = (ch >= 0 ? '▲ +' : '▼ ') + ch.toFixed(2) + ' (' + pct.toFixed(2) + '%)';
+        el.className = 'stock-change ' + (ch >= 0 ? 'up' : 'down');
+        calculate();
+        showToast('股价已更新：' + d.price + ' HKD');
+      } else {
+        showToast('获取失败：' + (d.error || '未知错误'), true);
+      }
+    } catch(e) { showToast('网络错误，请重试', true); }
+    btn.textContent = '刷新'; btn.disabled = false;
+  }
+
+  // ─── 加载汇率 ───
+  async function loadRate() {
+    const btn = document.getElementById('btn-rate');
+    btn.textContent = '…'; btn.disabled = true;
+    try {
+      const r = await fetch(API_BASE + '/api/rate');
+      const d = await r.json();
+      if (d.rate) {
+        document.getElementById('rate').value = d.rate;
+        calculate();
+        showToast('汇率已更新：1 HKD = ' + d.rate + ' CNY');
+      } else {
+        showToast('获取失败：' + (d.error || '未知错误'), true);
+      }
+    } catch(e) { showToast('网络错误，请重试', true); }
+    btn.textContent = '刷新'; btn.disabled = false;
+  }
+
+  // ─── 图表 ───
+  let chart;
+  async function loadChart(period = '1M') {
+    try {
+      const r = await fetch(API_BASE + '/api/history?period=' + period);
+      const d = await r.json();
+      if (d.data && d.data.length > 0) {
+        drawChart(d.data.map(p => p.date), d.data.map(p => p.price));
+      }
+    } catch(e) { /* 静默失败，图表不更新 */ }
+  }
+
+  function drawChart(labels, data) {
+    const lastPrice = data[data.length - 1];
+    const firstPrice = data[0];
+    const isUp = lastPrice >= firstPrice;
+    const color = isUp ? '#059669' : '#dc2626';
+
+    if (chart) chart.destroy();
+    const ctx = document.getElementById('stockChart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data,
+          borderColor: color,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: true,
+          backgroundColor: (context) => {
+            const g = context.chart.ctx.createLinearGradient(0,0,0,180);
+            g.addColorStop(0, isUp ? 'rgba(5,150,105,0.15)' : 'rgba(220,38,38,0.15)');
+            g.addColorStop(1, 'rgba(255,255,255,0)');
+            return g;
+          },
+          tension: 0.35,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode:'index', intersect:false },
+        plugins: {
+          legend: { display:false },
+          tooltip: {
+            backgroundColor:'#fff', titleColor:'#6b7280', bodyColor:'#1e2030',
+            borderColor:'#e2e5f0', borderWidth:1, padding:10,
+            callbacks: { label: ctx => '  ' + ctx.parsed.y.toFixed(2) + ' HKD' }
+          }
+        },
+        scales: {
+          x: { grid:{display:false}, ticks:{color:'#9ca3af',font:{size:11},maxTicksLimit:6}, border:{display:false} },
+          y: { grid:{color:'#f0f1f5'}, ticks:{color:'#9ca3af',font:{size:11},callback:v=>v.toFixed(1)}, border:{display:false} }
+        }
+      }
+    });
+  }
+
+  function switchPeriod(period, btn) {
+    document.querySelectorAll('.btn-period').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadChart(period);
+  }
+
+  // ─── AI 分析 ───
+  async function doAnalyze() {
+    const { price, rate, shares, net } = calculate();
+    if (!price || !rate) { showToast('请先填写股价和汇率', true); return; }
+
+    const btn = document.getElementById('btn-analyze');
+    const out = document.getElementById('ai-output');
+    btn.textContent = '⏳ AI 分析中…'; btn.disabled = true;
+    out.className = 'ai-output';
+    out.textContent = '正在生成分析，请稍候…';
+
+    try {
+      const r = await fetch(API_BASE + '/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price, rate, shares, net })
+      });
+      const d = await r.json();
+      if (d.text) {
+        out.textContent = d.text;
+      } else if (d.error === 'no_api_key') {
+        out.textContent = '⚠️ AI 功能需要配置 API Key。请在 Vercel 环境变量中设置 CLAUDE_API_KEY。';
+      } else {
+        out.textContent = '生成失败：' + (d.error || '未知错误');
+      }
+    } catch(e) {
+      out.textContent = '网络错误，请重试：' + e.message;
+    }
+    btn.textContent = '✨ 重新生成 AI 分析'; btn.disabled = false;
+  }
+
+  // ─── 对话 ───
+  async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const q = input.value.trim();
+    if (!q) return;
+
+    const { price, rate, shares, net } = calculate();
+    const history = document.getElementById('chat-history');
+    const btnSend = document.getElementById('btn-send');
+
+    const userBubble = document.createElement('div');
+    userBubble.className = 'chat-bubble user';
+    userBubble.innerHTML = `<div class="bubble-label">你</div>${q}`;
+    history.appendChild(userBubble);
+    input.value = '';
+    btnSend.disabled = true;
+
+    const aiBubble = document.createElement('div');
+    aiBubble.className = 'chat-bubble ai';
+    aiBubble.innerHTML = `<div class="bubble-label">AI 助手</div><span class="loading-dot">分析中</span>`;
+    history.appendChild(aiBubble);
+    history.scrollTop = history.scrollHeight;
+
+    try {
+      const r = await fetch(API_BASE + '/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price, rate, shares, net, question: q })
+      });
+      const d = await r.json();
+      aiBubble.innerHTML = `<div class="bubble-label">AI 助手</div>${d.text || d.error || '未知错误'}`;
+    } catch(e) {
+      aiBubble.innerHTML = `<div class="bubble-label">AI 助手</div>网络错误，请重试`;
+    }
+
+    history.scrollTop = history.scrollHeight;
+    btnSend.disabled = false;
+  }
+
+  function fillQ(q) {
+    document.getElementById('chat-input').value = q;
+    document.getElementById('chat-input').focus();
+  }
+
+  // ─── Toast ───
+  function showToast(msg, isErr = false) {
+    const t = document.createElement('div');
+    t.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#fff;border:1px solid ${isErr?'#dc2626':'var(--accent)'};color:var(--text);padding:10px 18px;border-radius:10px;font-size:13px;z-index:999;max-width:80%;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.12)`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }
+
+  // ─── 初始化 ───
+  onSlider(100000);
+  document.querySelectorAll('.btn-quick')[1].classList.add('active');
+  loadPrice();
+  loadRate();
+  loadChart('1M');
+</script>
+</body>
+</html>
