@@ -1,0 +1,6 @@
+name = "quhe-api"
+main = "cloudflare-worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# ZHIPU_API_KEY 在 Cloudflare Dashboard 里设置，不要写在这里
