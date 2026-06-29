@@ -1,43 +1,49 @@
 # 群核期权助手
 
-> 基于 AI 的港股期权行权决策工具
+群核科技 `00068.HK` 期权行权决策辅助工具。第一版包含股价与汇率参数、行权数量测算、个税估算、税后现金指标、AI 决策分析和问答。
 
-## 功能
-
-- 📈 实时获取 00068.HK 股价和 HKD/CNY 汇率
-- 💰 自动计算行权所得、个税（分月摊计法）、税后到手
-- 🧠 Claude AI 生成决策分析
-- 💬 对话式问答（行权策略、税务、最佳时机）
-
-## 部署（Vercel）
-
-### 1. Fork 或 clone 本仓库
-
-### 2. 在 Vercel 导入项目
-
-前往 [vercel.com](https://vercel.com) → Import Project → 选择本仓库
-
-### 3. 设置环境变量
-
-在 Vercel 项目设置 → Environment Variables 添加：
-
-| 变量名 | 说明 |
-|--------|------|
-| `CLAUDE_API_KEY` | Anthropic API Key（可选，无则 AI 功能不可用） |
-
-### 4. 部署完成
-
-Vercel 会自动构建并给你一个 `https://xxx.vercel.app` 链接，手机电脑均可直接访问。
-
-## 本地开发
+## 本地运行
 
 ```bash
-npx vercel dev
+npm install
+npm start
 ```
 
-## 技术栈
+浏览器打开 `http://127.0.0.1:4173`。
 
-- 前端：原生 HTML + Chart.js
-- 后端：Python（Vercel Serverless Functions）
-- 数据：Yahoo Finance API
-- AI：Anthropic Claude API
+## AI 配置
+
+本地可以在页面右上角 **AI 设置** 中保存智谱 API Key。也可以使用环境变量：
+
+```bash
+export AI_PROVIDER="zhipu"
+export ZHIPU_API_KEY="你的智谱 API Key"
+export ZHIPU_TEXT_MODEL="glm-4.7-flash"
+export ZHIPU_VISION_MODEL="glm-4.6v-flash"
+npm start
+```
+
+不要把 API Key 写进前端、提交到版本库或发送到聊天中。
+
+## Vercel 部署
+
+建议流程：
+
+1. 推送代码到 GitHub 仓库 `qianhaisu/AI-qunhe`。
+2. 在 Vercel 新建项目，导入这个 GitHub 仓库。
+3. 在 Vercel 项目的 Environment Variables 添加：
+   - `AI_PROVIDER=zhipu`
+   - `ZHIPU_API_KEY=你的智谱 API Key`
+   - `ZHIPU_TEXT_MODEL=glm-4.7-flash`
+   - `ZHIPU_VISION_MODEL=glm-4.6v-flash`
+4. 部署完成后访问 Vercel 分配的域名。
+
+## 校验
+
+```bash
+npm run check
+```
+
+## 说明
+
+本工具用于个人决策辅助，税费与市场分析均为估算，不构成投资、法律或税务建议。
