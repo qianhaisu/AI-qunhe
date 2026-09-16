@@ -43,6 +43,51 @@
         </div>
       </section>
 
+      <section class="liquidity-panel">
+        <div class="liquidity-head">
+          <div>
+            <strong>每日成交与流动性</strong>
+            <span>港交所 · 真实成交量（雅虎财经），切换上方周期同步刷新</span>
+          </div>
+        </div>
+        <div class="liquidity-metrics">
+          <div class="lm-item">
+            <span>最新成交量</span>
+            <strong id="lm-volume">--</strong>
+            <small>当日</small>
+          </div>
+          <div class="lm-item">
+            <span>最新成交额</span>
+            <strong id="lm-turnover">--</strong>
+            <small>约值</small>
+          </div>
+          <div class="lm-item">
+            <span>换手率</span>
+            <strong id="lm-turnover-rate">--</strong>
+            <small>占流通股</small>
+          </div>
+          <div class="lm-item">
+            <span>量比</span>
+            <strong id="lm-volume-ratio">--</strong>
+            <small>近5日均量</small>
+          </div>
+          <div class="lm-item">
+            <span>近5日均量</span>
+            <strong id="lm-avg5">--</strong>
+            <small>成交参考</small>
+          </div>
+          <div class="lm-item">
+            <span>近20日均量</span>
+            <strong id="lm-avg20">--</strong>
+            <small>成交参考</small>
+          </div>
+        </div>
+        <div class="liquidity-rating" id="liquidity-rating">加载中…</div>
+        <div class="chart-wrap">
+          <canvas id="volume-chart"></canvas>
+        </div>
+      </section>
+
       <section class="workbench">
         <div class="left-stack">
           <section class="card">

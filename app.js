@@ -73,7 +73,10 @@ async function fetchMarket(period = currentPeriod, button) {
     currentPeriod = result.period || period;
     currentMarketSeries = {
       labels: result.labels || [],
-      data: result.data || []
+      data: result.data || [],
+      volumes: result.volumes || [],
+      turnovers: result.turnovers || [],
+      floatShares: result.floatShares || 1726199340
     };
 
     $("#price").value = Number(result.price).toFixed(2);
@@ -85,6 +88,8 @@ async function fetchMarket(period = currentPeriod, button) {
 
     calculate();
     drawChart(currentMarketSeries.labels, currentMarketSeries.data);
+    drawVolumeChart(currentMarketSeries.labels, currentMarketSeries.volumes, currentMarketSeries.data);
+    renderLiquidity(currentMarketSeries);
     updateMarketTimestamp(new Date(result.updatedAt), result.source || "行情源");
     toast(`行情已更新：${Number(result.price).toFixed(2)} ${result.currency || "HKD"}`);
   } catch (error) {
@@ -193,9 +198,144 @@ function drawChart(labels = [], data = []) {
 
 }
 
+function fmtVolumeShares(shares) {
+  if (!Number.isFinite(shares) || shares <= 0) return "--";
+  if (shares >= 1e8) return `${(shares / 1e8).toFixed(2)} 亿股`;
+  if (shares >= 1e4) return `${(shares / 1e4).toFixed(1)} 万股`;
+  return `${Math.round(shares)} 股`;
+}
+
+function fmtHkd(value) {
+  if (!Number.isFinite(value) || value <= 0) return "--";
+  if (value >= 1e8) return `${(value / 1e8).toFixed(2)} 亿港元`;
+  if (value >= 1e4) return `${(value / 1e4).toFixed(1)} 万港元`;
+  return `${Math.round(value).toLocaleString("zh-CN")} 港元`;
+}
+
+function mean(values) {
+  const valid = values.filter((value) => Number.isFinite(value) && value > 0);
+  if (!valid.length) return 0;
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function drawVolumeChart(labels = [], volumes = [], closes = []) {
+  const canvas = $("#volume-chart");
+  if (!canvas || !labels.length || !volumes.length) return;
+  const ctx = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const padding = { top: 10, right: 10, bottom: 24, left: 48 };
+  const width = rect.width - padding.left - padding.right;
+  const height = rect.height - padding.top - padding.bottom;
+  const maxVolume = Math.max(...volumes, 1);
+  const slot = width / volumes.length;
+  const barWidth = Math.max(1, slot * 0.62);
+
+  ctx.strokeStyle = "#f0f1f5";
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 2; i += 1) {
+    const y = padding.top + (height / 2) * i;
+    const value = maxVolume - (maxVolume / 2) * i;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(rect.width - padding.right, y);
+    ctx.stroke();
+    ctx.fillText(fmtVolumeShares(value), padding.left - 8, y);
+  }
+
+  volumes.forEach((volume, index) => {
+    const x = padding.left + slot * index + (slot - barWidth) / 2;
+    const barHeight = Math.max(1, (volume / maxVolume) * height);
+    const y = padding.top + height - barHeight;
+    const up = index === 0 ? true : Number(closes[index]) >= Number(closes[index - 1]);
+    ctx.fillStyle = up ? "#059669" : "#dc2626";
+    ctx.fillRect(x, y, barWidth, barHeight);
+  });
+
+  const tickIndexes = [0, Math.floor(volumes.length / 2), volumes.length - 1];
+  ctx.fillStyle = "#9ca3af";
+  ctx.textBaseline = "top";
+  tickIndexes.forEach((index, tick) => {
+    const x = padding.left + slot * index + slot / 2;
+    ctx.textAlign = tick === 0 ? "left" : tick === 1 ? "center" : "right";
+    ctx.fillText(labels[index], x, padding.top + height + 8);
+  });
+}
+
+function renderLiquidity(series) {
+  const volumes = series.volumes || [];
+  const turnovers = series.turnovers || [];
+  const closes = series.data || [];
+  const floatShares = series.floatShares || 1726199340;
+  const ids = ["lm-volume", "lm-turnover", "lm-turnover-rate", "lm-volume-ratio", "lm-avg5", "lm-avg20"];
+  if (volumes.length < 2) {
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "--";
+    });
+    const rating = document.getElementById("liquidity-rating");
+    if (rating) {
+      rating.textContent = "暂无成交量数据";
+      rating.className = "liquidity-rating";
+    }
+    return;
+  }
+  const last = volumes.length - 1;
+  const lastVol = volumes[last];
+  const lastTurnover = turnovers[last] || Math.round(lastVol * Number(closes[last]));
+  const turnoverRate = (lastVol / floatShares) * 100;
+
+  const avg5 = mean(volumes.slice(Math.max(0, last - 5), last));
+  const volumeRatio = avg5 ? lastVol / avg5 : 0;
+  const avg20 = mean(volumes.slice(Math.max(0, last - 20), last));
+
+  const elVol = document.getElementById("lm-volume");
+  const elTurn = document.getElementById("lm-turnover");
+  const elRate = document.getElementById("lm-turnover-rate");
+  const elRatio = document.getElementById("lm-volume-ratio");
+  const elAvg5 = document.getElementById("lm-avg5");
+  const elAvg20 = document.getElementById("lm-avg20");
+  if (elVol) elVol.textContent = fmtVolumeShares(lastVol);
+  if (elTurn) elTurn.textContent = fmtHkd(lastTurnover);
+  if (elRate) elRate.textContent = `${turnoverRate.toFixed(2)}%`;
+  if (elRatio) elRatio.textContent = avg5 ? volumeRatio.toFixed(2) : "--";
+  if (elAvg5) elAvg5.textContent = fmtVolumeShares(avg5);
+  if (elAvg20) elAvg20.textContent = fmtVolumeShares(avg20);
+
+  const rating = document.getElementById("liquidity-rating");
+  if (rating) {
+    const avgTurnover = mean(turnovers.slice(Math.max(0, last - 20), last));
+    const ratio = avgTurnover ? lastTurnover / avgTurnover : 1;
+    let text;
+    let cls;
+    if (ratio >= 1.5) {
+      text = `放量 · 流动性活跃（成交约为近 20 日均值 ${ratio.toFixed(1)} 倍）`;
+      cls = "active";
+    } else if (ratio <= 0.6) {
+      text = `缩量 · 流动性偏弱（成交约为近 20 日均值 ${ratio.toFixed(1)} 倍）`;
+      cls = "quiet";
+    } else {
+      text = `量能平稳（成交约为近 20 日均值 ${ratio.toFixed(1)} 倍）`;
+      cls = "steady";
+    }
+    rating.textContent = text;
+    rating.className = `liquidity-rating ${cls}`;
+  }
+}
+
 function renderChart() {
   if (!currentMarketSeries) return;
   drawChart(currentMarketSeries.labels, currentMarketSeries.data);
+  drawVolumeChart(currentMarketSeries.labels, currentMarketSeries.volumes, currentMarketSeries.data);
+  renderLiquidity(currentMarketSeries);
 }
 
 function calcTax(income) {

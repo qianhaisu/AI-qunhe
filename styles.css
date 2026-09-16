@@ -526,11 +526,68 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .toast.show { display: block; }
 
+.liquidity-panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  margin-bottom: 16px;
+}
+.liquidity-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.liquidity-head strong { display: block; font-size: 16px; }
+.liquidity-head span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.liquidity-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.lm-item {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 12px 14px;
+}
+.lm-item span { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
+.lm-item strong {
+  display: block;
+  margin: 7px 0 3px;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lm-item small { display: block; color: var(--quiet); font-size: 11px; }
+.liquidity-rating {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+.liquidity-rating.active { color: var(--red); background: var(--red-soft); }
+.liquidity-rating.quiet { color: var(--green); background: var(--green-soft); }
+.liquidity-rating.steady { color: var(--accent); background: var(--accent-soft); }
+.liquidity-panel .chart-wrap { height: 170px; }
+#volume-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 @media (max-width: 900px) {
   .app-shell { width: min(100% - 24px, 680px); padding-top: 18px; }
   .topbar, .stock-header { align-items: flex-start; }
   .topbar { flex-direction: column; }
   .workbench, .input-grid, .result-grid, .insight-grid { grid-template-columns: 1fr; }
+  .liquidity-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .right-stack { position: static; }
   .chart-wrap { height: 180px; }
   .quick-row { grid-template-columns: 1fr; }
