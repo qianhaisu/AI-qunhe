@@ -39,6 +39,9 @@ const marketPeriods = {
   "1Y": { range: "1y", interval: "1wk" }
 };
 
+// 群核科技流通股本(股)，用于换手率估算；来源：港交所披露（与实时快照一致）
+const QUNHE_FLOAT_SHARES = 1726199340;
+
 function normalizeZhipuModel(model) {
   return String(model || "glm-4.7-flash").trim().toLowerCase();
 }
@@ -295,12 +298,14 @@ function normalizeYahooMarket(result, sourceSymbol, period) {
   const opens = quote.open || [];
   const highs = quote.high || [];
   const lows = quote.low || [];
+  const volumes = quote.volume || [];
   const meta = result.meta || {};
   const points = timestamps
     .map((timestamp, index) => ({
       timestamp,
       label: formatMarketLabel(timestamp),
-      close: [closes[index], opens[index], highs[index], lows[index]].find((value) => Number.isFinite(value))
+      close: [closes[index], opens[index], highs[index], lows[index]].find((value) => Number.isFinite(value)),
+      volume: Number.isFinite(volumes[index]) ? volumes[index] : 0
     }))
     .filter((point) => Number.isFinite(point.close));
 
@@ -318,7 +323,8 @@ function normalizeYahooMarket(result, sourceSymbol, period) {
     points.push({
       timestamp,
       label: formatMarketLabel(timestamp),
-      close: price
+      close: price,
+      volume: 0
     });
   }
 
@@ -350,6 +356,9 @@ function normalizeYahooMarket(result, sourceSymbol, period) {
     period,
     labels: points.map((point) => point.label),
     data: points.map((point) => Number(point.close.toFixed(3))),
+    volumes: points.map((point) => point.volume),
+    turnovers: points.map((point) => Math.round(point.volume * Number(point.close))),
+    floatShares: QUNHE_FLOAT_SHARES,
     source: `Yahoo Finance (${sourceSymbol})`
   };
 }
@@ -377,8 +386,62 @@ async function fetchQunheMarket(period = "1M") {
 async function getMarketQuote(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const period = url.searchParams.get("period") || "1M";
-  const market = await fetchQunheMarket(period);
-  return json(res, 200, market);
+  try {
+    const market = await fetchQunheMarket(period);
+    return json(res, 200, market);
+  } catch (error) {
+    if (process.env.VERCEL) {
+      return json(res, 502, { error: error.message });
+    }
+    return json(res, 200, buildSampleMarket(period));
+  }
+}
+
+// 本地预览用的示例行情（取自 00068.HK 真实近期日线：[日期, 收盘价, 成交量(股)]）
+// 仅当 Yahoo 行情获取失败且非 Vercel 环境时使用，线上始终返回真实数据。
+const SAMPLE_QUOTES = [
+  ["9月2日", 8.4, 1092608],
+  ["9月3日", 9.54, 5632706],
+  ["9月4日", 9.6, 7152070],
+  ["9月7日", 12.47, 46729259],
+  ["9月8日", 12.31, 26825209],
+  ["9月9日", 11.2, 13147100],
+  ["9月10日", 9.975, 13688822],
+  ["9月11日", 9.095, 18103000],
+  ["9月14日", 8.28, 11384503],
+  ["9月15日", 7.9, 9737632],
+  ["9月16日", 8.045, 5652500]
+];
+
+function buildSampleMarket(period = "1M") {
+  const labels = SAMPLE_QUOTES.map((row) => row[0]);
+  const data = SAMPLE_QUOTES.map((row) => row[1]);
+  const volumes = SAMPLE_QUOTES.map((row) => row[2]);
+  const turnovers = SAMPLE_QUOTES.map((row) => Math.round(row[2] * row[1]));
+  const price = data[data.length - 1];
+  const previousClose = data[data.length - 2];
+  const change = price - previousClose;
+  const changePct = previousClose ? (change / previousClose) * 100 : 0;
+  return {
+    symbol: "00068.HK",
+    name: "群核科技",
+    currency: "HKD",
+    exchangeName: "HKG",
+    sourceSymbol: "0068.HK",
+    price,
+    previousClose,
+    change,
+    changePct,
+    updatedAt: new Date().toISOString(),
+    period,
+    requestedPeriod: period,
+    labels,
+    data,
+    volumes,
+    turnovers,
+    floatShares: QUNHE_FLOAT_SHARES,
+    source: "示例数据（实时行情获取失败，本地预览用）"
+  };
 }
 
 async function fetchHkdCnyRate() {

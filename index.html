@@ -23,11 +23,13 @@
         <div class="stock-header">
           <div>
             <strong>群核科技</strong>
-            <span>港交所 · 当前使用模拟行情，可手动改价</span>
+            <span>港交所 · 实时行情来自线上行情源，可手动改价做情景测算</span>
+            <span class="market-updated">更新时间：<b id="market-updated-at">--</b></span>
           </div>
           <div class="stock-price-block">
-            <div class="stock-price" id="display-price">19.62</div>
-            <div class="stock-change down" id="display-change">▼ -0.38 (-1.90%)</div>
+            <div class="stock-price" id="display-price">11.50</div>
+            <div class="stock-change down" id="display-change">▼ -0.10 (-0.86%)</div>
+            <button type="button" class="market-refresh" id="refresh-market">刷新行情</button>
           </div>
         </div>
         <div class="chart-wrap">
@@ -41,6 +43,51 @@
         </div>
       </section>
 
+      <section class="liquidity-panel">
+        <div class="liquidity-head">
+          <div>
+            <strong>每日成交与流动性</strong>
+            <span>港交所 · 真实成交量（雅虎财经），切换上方周期同步刷新</span>
+          </div>
+        </div>
+        <div class="liquidity-metrics">
+          <div class="lm-item">
+            <span>最新成交量</span>
+            <strong id="lm-volume">--</strong>
+            <small>当日</small>
+          </div>
+          <div class="lm-item">
+            <span>最新成交额</span>
+            <strong id="lm-turnover">--</strong>
+            <small>约值</small>
+          </div>
+          <div class="lm-item">
+            <span>换手率</span>
+            <strong id="lm-turnover-rate">--</strong>
+            <small>占流通股</small>
+          </div>
+          <div class="lm-item">
+            <span>量比</span>
+            <strong id="lm-volume-ratio">--</strong>
+            <small>近5日均量</small>
+          </div>
+          <div class="lm-item">
+            <span>近5日均量</span>
+            <strong id="lm-avg5">--</strong>
+            <small>成交参考</small>
+          </div>
+          <div class="lm-item">
+            <span>近20日均量</span>
+            <strong id="lm-avg20">--</strong>
+            <small>成交参考</small>
+          </div>
+        </div>
+        <div class="liquidity-rating" id="liquidity-rating">加载中…</div>
+        <div class="chart-wrap">
+          <canvas id="volume-chart"></canvas>
+        </div>
+      </section>
+
       <section class="workbench">
         <div class="left-stack">
           <section class="card">
@@ -49,7 +96,7 @@
               <label>
                 <span>当前股价</span>
                 <div class="input-row">
-                  <input type="number" id="price" value="19.62" step="0.01" min="0" />
+                  <input type="number" id="price" value="11.50" step="0.01" min="0" />
                   <b>HKD</b>
                   <button type="button" id="refresh-price">刷新</button>
                 </div>
@@ -100,18 +147,27 @@
                 <small>约 <b id="net-wan">--</b> 万元</small>
               </div>
             </div>
+            <p class="calc-note" id="calc-price-used">本次测算使用当前股价：-- HKD</p>
             <div class="insight-grid">
               <article class="insight green">
-                <span>距百万现金</span>
+                <span>百万现金之路</span>
                 <strong id="million-value">¥--</strong>
-                <small id="million-sub">税后到手是否超过 ¥100 万</small>
+                <small id="million-sub">税后到手 + 常规资产是否超过 ¥100 万</small>
                 <b id="million-tag">计算中</b>
-              </article>
-              <article class="insight purple">
-                <span>相当于 N 年盈余</span>
-                <strong id="years-value">-- 年</strong>
-                <small>按月盈余 ¥2.3 万估算</small>
-                <b id="years-tag">计算中</b>
+                <div class="asset-grid">
+                  <label>
+                    <span>金融资产</span>
+                    <input id="asset-financial" type="number" min="0" step="1000" value="0" inputmode="decimal">
+                  </label>
+                  <label>
+                    <span>储蓄现金</span>
+                    <input id="asset-cash" type="number" min="0" step="1000" value="0" inputmode="decimal">
+                  </label>
+                  <label>
+                    <span>其他</span>
+                    <input id="asset-other" type="number" min="0" step="1000" value="0" inputmode="decimal">
+                  </label>
+                </div>
               </article>
             </div>
           </section>
@@ -127,7 +183,7 @@
               <span>智谱 GLM</span>
             </div>
             <button class="primary-button" id="generate-analysis">生成 AI 分析</button>
-            <div class="ai-output placeholder" id="ai-output">点击上方按钮生成建议。若尚未配置智谱 API key，将显示本地演示分析。</div>
+            <div class="ai-output placeholder" id="ai-output">点击上方按钮生成建议。若 AI 或后端接口不可用，将直接显示错误详情。</div>
           </section>
 
           <section class="card chat-card">

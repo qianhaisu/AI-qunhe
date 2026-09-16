@@ -1,6 +1,5 @@
 const EXERCISE_PRICE_CNY = 0.025;
 const TOTAL_SHARES = 150000;
-const MONTHLY_SURPLUS = 23000;
 const MILLION_TARGET = 1000000;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -9,13 +8,22 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 let currentPeriod = "1M";
 let latestMetrics = null;
 let toastTimer = null;
+let aiConfigured = false;
+let currentMarketSeries = null;
 
-const periodConfigs = {
-  "1M": { days: 30, base: 20.5, vol: 0.45 },
-  "3M": { days: 90, base: 18, vol: 0.5 },
-  "6M": { days: 180, base: 15.5, vol: 0.55 },
-  "1Y": { days: 365, base: 12, vol: 0.6 }
-};
+function assertApiAvailable() {
+  if (location.protocol === "file:") {
+    throw new Error("当前是 file:// 静态打开，行情和 AI 接口无法连接。请用本地服务或 Vercel 链接打开页面。");
+  }
+}
+
+async function fetchJson(url, options) {
+  assertApiAvailable();
+  const response = await fetch(url, options);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "请求失败");
+  return result;
+}
 
 function formatCurrency(value) {
   return `¥${Math.round(value).toLocaleString("zh-CN")}`;
@@ -38,27 +46,81 @@ function toast(message) {
   toastTimer = setTimeout(() => box.classList.remove("show"), 2600);
 }
 
-function genPriceData(period) {
-  const cfg = periodConfigs[period];
-  const labels = [];
-  const data = [];
-  let price = cfg.base;
-  const now = new Date();
-  for (let i = cfg.days; i >= 0; i -= 1) {
-    const date = new Date(now);
-    date.setDate(date.getDate() - i);
-    labels.push(date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" }));
-    price += (Math.random() - 0.49) * cfg.vol;
-    price = Math.max(price, cfg.base * 0.6);
-    data.push(Number(price.toFixed(2)));
-  }
-  data[data.length - 1] = Number($("#price").value) || 19.62;
-  return { labels, data };
+function formatTimestamp(date = new Date()) {
+  return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
 }
 
-function renderChart(period = currentPeriod) {
-  currentPeriod = period;
-  const { labels, data } = genPriceData(period);
+function updateMarketTimestamp(date = new Date(), source = "行情源") {
+  $("#market-updated-at").textContent = `${formatTimestamp(date)}（北京时间）`;
+  $("#market-updated-at").title = source;
+}
+
+async function fetchMarket(period = currentPeriod, button) {
+  const target = button || $("#refresh-market");
+  const original = target.textContent;
+  target.textContent = "...";
+  target.disabled = true;
+  try {
+    const result = await fetchJson(`/api/market/quote?period=${encodeURIComponent(period)}`);
+
+    currentPeriod = result.period || period;
+    currentMarketSeries = {
+      labels: result.labels || [],
+      data: result.data || [],
+      volumes: result.volumes || [],
+      turnovers: result.turnovers || [],
+      floatShares: result.floatShares || 1726199340
+    };
+
+    $("#price").value = Number(result.price).toFixed(2);
+    $("#display-price").textContent = Number(result.price).toFixed(2);
+    const isUp = Number(result.change) >= 0;
+    $("#display-change").textContent =
+      `${isUp ? "▲" : "▼"} ${Math.abs(Number(result.change)).toFixed(2)} (${Number(result.changePct).toFixed(2)}%)`;
+    $("#display-change").className = `stock-change ${isUp ? "up" : "down"}`;
+
+    calculate();
+    drawChart(currentMarketSeries.labels, currentMarketSeries.data);
+    drawVolumeChart(currentMarketSeries.labels, currentMarketSeries.volumes, currentMarketSeries.data);
+    renderLiquidity(currentMarketSeries);
+    updateMarketTimestamp(new Date(result.updatedAt), result.source || "行情源");
+    toast(`行情已更新：${Number(result.price).toFixed(2)} ${result.currency || "HKD"}`);
+  } catch (error) {
+    toast(`行情更新失败：${error.message}`);
+    $("#market-updated-at").textContent = `行情更新失败：${error.message}`;
+  } finally {
+    target.textContent = original;
+    target.disabled = false;
+  }
+}
+
+async function fetchRate(button) {
+  const target = button || $("#refresh-rate");
+  const original = target.textContent;
+  target.textContent = "...";
+  target.disabled = true;
+  try {
+    const result = await fetchJson("/api/market/rate");
+    $("#rate").value = Number(result.rate).toFixed(4);
+    calculate();
+    toast(`汇率已更新：1 ${result.base} = ${Number(result.rate).toFixed(4)} ${result.quote}`);
+  } catch (error) {
+    toast(`汇率更新失败：${error.message}`);
+  } finally {
+    target.textContent = original;
+    target.disabled = false;
+  }
+}
+
+function drawChart(labels = [], data = []) {
+  if (!labels.length || !data.length) return;
   const first = data[0];
   const last = data[data.length - 1];
   const isUp = last >= first;
@@ -134,10 +196,146 @@ function renderChart(period = currentPeriod) {
     ctx.fillText(labels[index], xFor(index), padding.top + height + 10);
   });
 
-  const delta = last - first;
-  const pct = first ? (delta / first) * 100 : 0;
-  $("#display-change").textContent = `${isUp ? "▲" : "▼"} ${delta.toFixed(2)} (${pct.toFixed(2)}%)`;
-  $("#display-change").className = `stock-change ${isUp ? "up" : "down"}`;
+}
+
+function fmtVolumeShares(shares) {
+  if (!Number.isFinite(shares) || shares <= 0) return "--";
+  if (shares >= 1e8) return `${(shares / 1e8).toFixed(2)} 亿股`;
+  if (shares >= 1e4) return `${(shares / 1e4).toFixed(1)} 万股`;
+  return `${Math.round(shares)} 股`;
+}
+
+function fmtHkd(value) {
+  if (!Number.isFinite(value) || value <= 0) return "--";
+  if (value >= 1e8) return `${(value / 1e8).toFixed(2)} 亿港元`;
+  if (value >= 1e4) return `${(value / 1e4).toFixed(1)} 万港元`;
+  return `${Math.round(value).toLocaleString("zh-CN")} 港元`;
+}
+
+function mean(values) {
+  const valid = values.filter((value) => Number.isFinite(value) && value > 0);
+  if (!valid.length) return 0;
+  return valid.reduce((sum, value) => sum + value, 0) / valid.length;
+}
+
+function drawVolumeChart(labels = [], volumes = [], closes = []) {
+  const canvas = $("#volume-chart");
+  if (!canvas || !labels.length || !volumes.length) return;
+  const ctx = canvas.getContext("2d");
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  const padding = { top: 10, right: 10, bottom: 24, left: 48 };
+  const width = rect.width - padding.left - padding.right;
+  const height = rect.height - padding.top - padding.bottom;
+  const maxVolume = Math.max(...volumes, 1);
+  const slot = width / volumes.length;
+  const barWidth = Math.max(1, slot * 0.62);
+
+  ctx.strokeStyle = "#f0f1f5";
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 2; i += 1) {
+    const y = padding.top + (height / 2) * i;
+    const value = maxVolume - (maxVolume / 2) * i;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(rect.width - padding.right, y);
+    ctx.stroke();
+    ctx.fillText(fmtVolumeShares(value), padding.left - 8, y);
+  }
+
+  volumes.forEach((volume, index) => {
+    const x = padding.left + slot * index + (slot - barWidth) / 2;
+    const barHeight = Math.max(1, (volume / maxVolume) * height);
+    const y = padding.top + height - barHeight;
+    const up = index === 0 ? true : Number(closes[index]) >= Number(closes[index - 1]);
+    ctx.fillStyle = up ? "#059669" : "#dc2626";
+    ctx.fillRect(x, y, barWidth, barHeight);
+  });
+
+  const tickIndexes = [0, Math.floor(volumes.length / 2), volumes.length - 1];
+  ctx.fillStyle = "#9ca3af";
+  ctx.textBaseline = "top";
+  tickIndexes.forEach((index, tick) => {
+    const x = padding.left + slot * index + slot / 2;
+    ctx.textAlign = tick === 0 ? "left" : tick === 1 ? "center" : "right";
+    ctx.fillText(labels[index], x, padding.top + height + 8);
+  });
+}
+
+function renderLiquidity(series) {
+  const volumes = series.volumes || [];
+  const turnovers = series.turnovers || [];
+  const closes = series.data || [];
+  const floatShares = series.floatShares || 1726199340;
+  const ids = ["lm-volume", "lm-turnover", "lm-turnover-rate", "lm-volume-ratio", "lm-avg5", "lm-avg20"];
+  if (volumes.length < 2) {
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = "--";
+    });
+    const rating = document.getElementById("liquidity-rating");
+    if (rating) {
+      rating.textContent = "暂无成交量数据";
+      rating.className = "liquidity-rating";
+    }
+    return;
+  }
+  const last = volumes.length - 1;
+  const lastVol = volumes[last];
+  const lastTurnover = turnovers[last] || Math.round(lastVol * Number(closes[last]));
+  const turnoverRate = (lastVol / floatShares) * 100;
+
+  const avg5 = mean(volumes.slice(Math.max(0, last - 5), last));
+  const volumeRatio = avg5 ? lastVol / avg5 : 0;
+  const avg20 = mean(volumes.slice(Math.max(0, last - 20), last));
+
+  const elVol = document.getElementById("lm-volume");
+  const elTurn = document.getElementById("lm-turnover");
+  const elRate = document.getElementById("lm-turnover-rate");
+  const elRatio = document.getElementById("lm-volume-ratio");
+  const elAvg5 = document.getElementById("lm-avg5");
+  const elAvg20 = document.getElementById("lm-avg20");
+  if (elVol) elVol.textContent = fmtVolumeShares(lastVol);
+  if (elTurn) elTurn.textContent = fmtHkd(lastTurnover);
+  if (elRate) elRate.textContent = `${turnoverRate.toFixed(2)}%`;
+  if (elRatio) elRatio.textContent = avg5 ? volumeRatio.toFixed(2) : "--";
+  if (elAvg5) elAvg5.textContent = fmtVolumeShares(avg5);
+  if (elAvg20) elAvg20.textContent = fmtVolumeShares(avg20);
+
+  const rating = document.getElementById("liquidity-rating");
+  if (rating) {
+    const avgTurnover = mean(turnovers.slice(Math.max(0, last - 20), last));
+    const ratio = avgTurnover ? lastTurnover / avgTurnover : 1;
+    let text;
+    let cls;
+    if (ratio >= 1.5) {
+      text = `放量 · 流动性活跃（成交约为近 20 日均值 ${ratio.toFixed(1)} 倍）`;
+      cls = "active";
+    } else if (ratio <= 0.6) {
+      text = `缩量 · 流动性偏弱（成交约为近 20 日均值 ${ratio.toFixed(1)} 倍）`;
+      cls = "quiet";
+    } else {
+      text = `量能平稳（成交约为近 20 日均值 ${ratio.toFixed(1)} 倍）`;
+      cls = "steady";
+    }
+    rating.textContent = text;
+    rating.className = `liquidity-rating ${cls}`;
+  }
+}
+
+function renderChart() {
+  if (!currentMarketSeries) return;
+  drawChart(currentMarketSeries.labels, currentMarketSeries.data);
+  drawVolumeChart(currentMarketSeries.labels, currentMarketSeries.volumes, currentMarketSeries.data);
+  renderLiquidity(currentMarketSeries);
 }
 
 function calcTax(income) {
@@ -158,36 +356,40 @@ function calculate() {
   const price = Number($("#price").value) || 0;
   const rate = Number($("#rate").value) || 0;
   const shares = Number($("#shares-slider").value) || 0;
+  const assets = {
+    financial: Number($("#asset-financial").value) || 0,
+    cash: Number($("#asset-cash").value) || 0,
+    other: Number($("#asset-other").value) || 0
+  };
+  assets.total = assets.financial + assets.cash + assets.other;
   const priceCny = price * rate;
   const gross = Math.max((priceCny - EXERCISE_PRICE_CNY) * shares, 0);
   const tax = gross > 0 ? calcTax(gross) : 0;
   const net = Math.max(gross - tax, 0);
-  const years = net / (MONTHLY_SURPLUS * 12);
+  const millionTotal = net + assets.total;
 
-  latestMetrics = { price, rate, shares, priceCny, gross, tax, net, years };
+  latestMetrics = { price, rate, shares, priceCny, gross, tax, net, assets, millionTotal };
 
   $("#gross").textContent = gross ? formatCurrency(gross) : "¥--";
   $("#tax").textContent = gross ? `-${formatCurrency(tax)}` : "¥--";
   $("#net").textContent = gross ? formatCurrency(net) : "¥--";
   $("#net-wan").textContent = gross ? (net / 10000).toFixed(1) : "--";
   $("#display-price").textContent = price.toFixed(2);
+  $("#calc-price-used").textContent =
+    `本次测算使用当前股价：${price.toFixed(2)} HKD，折合 ${priceCny.toFixed(3)} CNY/股`;
 
   if (gross) {
-    const gap = MILLION_TARGET - net;
-    $("#million-value").textContent = `¥${Math.round(net / 10000)}万`;
+    const gap = MILLION_TARGET - millionTotal;
+    $("#million-value").textContent = `¥${Math.round(millionTotal / 10000)}万`;
     $("#million-sub").textContent = gap <= 0
-      ? `超出百万目标 ${formatCurrency(Math.abs(gap))}`
-      : `距百万还差 ${formatCurrency(gap)}`;
+      ? `税后到手 ${formatCurrency(net)} + 常规资产 ${formatCurrency(assets.total)}，超出目标 ${formatCurrency(Math.abs(gap))}`
+      : `税后到手 ${formatCurrency(net)} + 常规资产 ${formatCurrency(assets.total)}，还差 ${formatCurrency(gap)}`;
     $("#million-tag").textContent = gap <= 0 ? "已达成" : "未达成";
     $("#million-tag").style.background = gap <= 0 ? "#059669" : "#d97706";
-    $("#years-value").textContent = `${years.toFixed(1)} 年`;
-    $("#years-tag").textContent = `= ${Math.round(years * 12)} 个月盈余`;
   } else {
     $("#million-value").textContent = "¥--";
-    $("#million-sub").textContent = "税后到手是否超过 ¥100 万";
+    $("#million-sub").textContent = "税后到手 + 常规资产是否超过 ¥100 万";
     $("#million-tag").textContent = "计算中";
-    $("#years-value").textContent = "-- 年";
-    $("#years-tag").textContent = "计算中";
   }
 }
 
@@ -205,54 +407,12 @@ function updateShares(value) {
   calculate();
 }
 
-function localAnalysis() {
-  const { price, rate, shares, net, years } = latestMetrics;
-  const shareText = shares.toLocaleString("zh-CN");
-  const riskLine = price >= 18
-    ? "当前价格相对你的行权价安全垫非常厚，主要风险不在是否值得行权，而在卖出节奏和解禁期波动。"
-    : "当前价格仍有正收益，但安全垫已经明显收窄，建议把止损线和执行窗口写清楚。";
-  return `
-    <h3>当前价位评估</h3>
-    按 <strong>${price.toFixed(2)} HKD</strong>、汇率 <strong>${rate.toFixed(4)}</strong>、行权 <strong>${shareText} 股</strong> 估算，税后到手约 <strong>${formatCurrency(net)}</strong>。
-    <h3>核心判断</h3>
-    ${riskLine} 这笔现金相当于约 <strong>${years.toFixed(1)} 年</strong>月盈余。
-    <h3>行动建议</h3>
-    继续以“卖 2/3、保留 1/3”为基础方案。若临近解禁出现连续放量回调，可考虑提高卖出比例；若价格稳定在 18 HKD 以上，优先保证行权日卖出动作确定执行。
-  `;
-}
-
-function localReply(question) {
-  const q = question.toLowerCase();
-  if (q.includes("15") || q.includes("跌")) {
-    const price = 15;
-    const rate = Number($("#rate").value) || 0.9213;
-    const shares = Number($("#shares-slider").value) || 100000;
-    const gross = Math.max((price * rate - EXERCISE_PRICE_CNY) * shares, 0);
-    const tax = calcTax(gross);
-    const net = gross - tax;
-    return `按 15 HKD 和当前汇率估算，行权 ${shares.toLocaleString("zh-CN")} 股税后约 ${formatCurrency(net)}。这仍可能覆盖相当长的家庭现金流，但卖出纪律会比当前价位更重要。`;
-  }
-  if (q.includes("vc") || q.includes("解禁")) {
-    return "解禁日前后最大的风险是集中抛压和情绪折价。正式判断需要结合真实公告、成交量和股东结构；在工具里我会把它作为卖出时机风险，而不是改变行权收益公式。";
-  }
-  if (q.includes("2/3") || q.includes("全部")) {
-    return "2/3 方案更像“先锁定财务目标，再保留一部分上涨期权”。全部行权的现金确定性更强，但会减少后续上涨参与度。建议先看税后现金是否已经超过你的最低目标。";
-  }
-  if (q.includes("时机") || q.includes("最佳")) {
-    return "最佳时机不是猜最高点，而是找到能确定执行的窗口。若价格高于目标线且流动性正常，提前锁定通常比等到最后一天更安心。";
-  }
-  return "这是个好问题。第一版我会优先结合当前股价、汇率、行权股数、税后现金和解禁风险来回答；配置智谱 API key 后可以生成更完整的推理说明。";
-}
-
 async function postJson(url, body) {
-  const response = await fetch(url, {
+  return fetchJson(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "请求失败");
-  return result;
 }
 
 async function generateAnalysis() {
@@ -266,8 +426,8 @@ async function generateAnalysis() {
     const result = await postJson("/api/quhe/analyze", latestMetrics);
     output.innerHTML = result.html;
   } catch (error) {
-    output.innerHTML = localAnalysis();
-    toast(`${error.message}，已显示本地演示分析`);
+    output.innerHTML = `<strong>AI 请求失败：</strong>${escapeHtml(error.message)}`;
+    toast("AI 请求失败，已显示错误详情");
   } finally {
     button.disabled = false;
     button.textContent = "重新生成 AI 分析";
@@ -289,10 +449,14 @@ async function sendChat(question) {
   appendChat("user", escapeHtml(cleaned));
   const pending = appendChat("ai", "正在分析...");
   try {
-    const result = await postJson("/api/quhe/chat", { question: cleaned, metrics: latestMetrics });
+    const result = await postJson("/api/quhe/chat", {
+      question: cleaned,
+      metrics: latestMetrics,
+      clientTime: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+    });
     pending.innerHTML = `<b>AI 助手</b>${result.html}`;
   } catch (error) {
-    pending.innerHTML = `<b>AI 助手</b>${escapeHtml(localReply(cleaned))}`;
+    pending.innerHTML = `<b>AI 助手</b>AI 请求失败：${escapeHtml(error.message)}`;
   }
   $("#chat-history").scrollTop = $("#chat-history").scrollHeight;
 }
@@ -311,6 +475,7 @@ function closeSettings() {
 
 function renderAiSettings(settings) {
   if (!settings) return;
+  aiConfigured = Boolean(settings.configured);
   $("#zhipu-text-model").value = settings.textModel || "glm-4.7-flash";
   $("#api-key-hint").textContent = settings.configured
     ? `已保存 ${settings.keyHint}，输入新 Key 可覆盖`
@@ -330,15 +495,17 @@ function renderAiSettings(settings) {
 
 async function loadAiSettings() {
   if (location.protocol === "file:") {
-    $("#ai-status").textContent = "静态预览";
+    $("#ai-status").textContent = "需服务打开";
+    $("#ai-status").className = "connection-pill error";
+    $("#ai-output").innerHTML = "<strong>AI 暂不可用：</strong>当前是 file:// 静态打开，AI 接口无法连接。请用本地服务或 Vercel 链接打开页面。";
     return;
   }
   try {
-    const response = await fetch("/api/settings/ai");
-    const result = await response.json();
+    const result = await fetchJson("/api/settings/ai");
     renderAiSettings(result.settings);
-  } catch {
+  } catch (error) {
     $("#ai-status").textContent = "AI 状态未知";
+    $("#ai-output").innerHTML = `<strong>AI 状态检查失败：</strong>${escapeHtml(error.message)}`;
   }
 }
 
@@ -377,36 +544,24 @@ async function saveAiSettings(event) {
 
 $("#price").addEventListener("input", () => {
   calculate();
-  renderChart(currentPeriod);
 });
 $("#rate").addEventListener("input", calculate);
+["#asset-financial", "#asset-cash", "#asset-other"].forEach((selector) => {
+  $(selector).addEventListener("input", calculate);
+});
 $("#shares-slider").addEventListener("input", (event) => updateShares(event.target.value));
 $("#refresh-price").addEventListener("click", (event) => {
-  event.target.textContent = "...";
-  setTimeout(() => {
-    const price = (18.5 + Math.random() * 3).toFixed(2);
-    $("#price").value = price;
-    event.target.textContent = "刷新";
-    calculate();
-    renderChart(currentPeriod);
-    toast(`股价已更新：${price} HKD（模拟数据）`);
-  }, 600);
+  fetchMarket(currentPeriod, event.target);
 });
+$("#refresh-market").addEventListener("click", (event) => fetchMarket(currentPeriod, event.target));
 $("#refresh-rate").addEventListener("click", (event) => {
-  event.target.textContent = "...";
-  setTimeout(() => {
-    const rate = (0.917 + Math.random() * 0.009).toFixed(4);
-    $("#rate").value = rate;
-    event.target.textContent = "刷新";
-    calculate();
-    toast(`汇率已更新：1 HKD = ${rate} CNY（模拟数据）`);
-  }, 500);
+  fetchRate(event.target);
 });
 $$("#period-tabs button").forEach((button) => {
   button.addEventListener("click", () => {
     $$("#period-tabs button").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
-    renderChart(button.dataset.period);
+    fetchMarket(button.dataset.period, $("#refresh-market"));
   });
 });
 $$("#quick-shares button").forEach((button) => {
@@ -445,5 +600,6 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", () => renderChart(currentPeriod));
 
 updateShares(100000);
-renderChart("1M");
+fetchMarket("1M", $("#refresh-market"));
+fetchRate($("#refresh-rate"));
 loadAiSettings();
